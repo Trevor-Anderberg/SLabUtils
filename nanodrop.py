@@ -1,0 +1,229 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+class nanodropTSV:
+
+    def __init__(self, path):
+        self.path = path
+        self.info = {}
+        self.data = {}
+        
+        with open(self.path, 'r') as f:
+            first_line = f.readline()
+            self.is_table = "Application:" in first_line
+            if not self.is_table:
+                raise ValueError("Invalid file format: missing 'Application:' in header")
+            self.load_table(f)
+
+    def load_table(self,f):
+        # return to the beginning of the file
+        f.seek(0)
+        
+        # read info from the header
+        while True:
+            line = f.readline().strip()
+            if ":\t" not in line:
+                break
+            key, value = line.split(":\t", 1)
+            self.info[key.strip()] = value.strip()
+
+        if "Date and Time" not in line:
+            raise ValueError("Invalid table format: missing 'Date and Time' in wavelenght line")
+
+        # read wavelengths
+
+        wavelengths = line.split("\t")[3:]
+        self.data["Wavelengths"] = np.array(wavelengths, dtype=float)
+        
+        date_times = []
+        usernames = []
+        sample_ids = []
+
+        for line in f:
+            cols = line.strip().split("\t")
+            if len(cols) < 4:
+                continue
+            date_times.append(cols[0].strip())
+            sample_ids.append(cols[1].strip())
+            usernames.append(cols[2].strip())
+            self.data[cols[1].strip()] = np.array(cols[3:], dtype=float)
+
+        self.info["DateTimes"] = date_times
+        self.info["Usernames"] = usernames
+        self.info["Samples"] = sample_ids
+
+    def rename_samples(self, new_names):
+        """
+        Renames the samples in the dataset using the provided list of new names.
+        
+        Parameters
+        ----------
+        new_names : list of str
+            A list containing the new names for the samples. The length of this list
+            must match the number of existing samples.
+        
+        Raises
+        ------
+        ValueError
+            If the length of `new_names` does not match the number of samples.
+        
+        Notes
+        -----
+        This method updates both the internal data dictionary and the sample names
+        stored in the `info` attribute.
+        """
+
+        if len(new_names) != len(self.info["Samples"]):
+            raise ValueError("Length of new_names must match number of samples")
+        for old_name, new_name in zip(self.info["Samples"], new_names):
+            self.data[new_name] = self.data.pop(old_name)
+        self.info["Samples"] = new_names
+
+    def get_data(self, samples=None, wavelengths=None):
+        if wavelengths is None:
+            mask = np.ones_like(self.data["Wavelengths"], dtype=bool)
+        elif len(wavelengths) > 0:
+            if np.issubclass_(type(wavelengths[0]), bool) and len(wavelengths) == len(self.data["Wavelengths"]):
+                mask = wavelengths
+                # if the dtype is boolean, treat wavelengths as a mask
+            elif type(wavelengths) is tuple:
+                mask = (self.data["Wavelengths"] >= wavelengths[0]) & (self.data["Wavelengths"] <= wavelengths[1])
+            else:
+                mask = np.isin(self.data["Wavelengths"], wavelengths)
+                if not np.all(wavelengths == self.data["Wavelengths"][mask]):
+                    # there are wavelengths in the mask that are not in the original list
+                    # or things are out of order
+                    # manual search
+                    mask = []
+                    for w in wavelengths:
+
+                        if w < self.data["Wavelengths"][0] or w > self.data["Wavelengths"][-1]:
+                            raise ValueError(f"Wavelength {w} is out of range ({self.data['Wavelengths'][0]} - {self.data['Wavelengths'][-1]})")
+                        idx = np.argmin(np.abs(self.data["Wavelengths"] - w))
+                        if w != self.data["Wavelengths"][idx]:
+                            print(f"Wavelength {w} not found, using closest value {self.data['Wavelengths'][idx]}")
+                        mask.append(idx)  
+
+        if samples is None:
+            samples = self.info["Samples"]
+        elif not isinstance(samples, (list, tuple)):
+            samples = list(samples)
+
+        if np.issubclass_(type(mask[0]), (bool, np.bool_)):
+            num_wavelengths = np.sum(mask)
+        else:
+            num_wavelengths = len(mask)
+        # print(type(mask[0]))
+        # print(num_wavelengths)
+        # print(mask)
+
+        data = np.zeros((len(samples), num_wavelengths))
+
+        for i, sample in enumerate(samples):
+            if sample in self.data:
+                data[i] = self.data[sample][mask]
+            else:
+                data[i] = np.nan
+
+        return data, self.data["Wavelengths"][mask]
+
+    def plot(self, ax=None, samples=None, wavelengths=None):
+        """
+        Plot absorbance spectra for selected samples and wavelengths.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            The axes on which to plot. If None, a new figure and axes are created.
+        samples : list of str, optional
+            List of sample names to plot. If None, all samples in `self.info["Samples"]` are plotted.
+        wavelengths : array-like, optional
+            Wavelength range or mask to plot. If None, all wavelengths are plotted.
+            If a list or array of length 2, interpreted as [min, max] wavelength range.
+            If a boolean mask of the same length as `self.data["Wavelengths"]`, used directly.
+        
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes with the plotted spectra.
+        
+        Notes
+        -----
+        Plots the absorbance spectra for the specified samples and wavelength range.
+        Adds labels, title, and legend to the plot.
+        Prints a message if a sample is not found in the data.
+        """
+
+        if samples is None:
+            samples = self.info["Samples"]
+        if wavelengths is None:
+            mask = np.ones_like(self.data["Wavelengths"], dtype=bool)
+        elif len(wavelengths) == 2:
+            mask = (self.data["Wavelengths"] >= wavelengths[0]) & (self.data["Wavelengths"] <= wavelengths[1])
+        elif len(wavelengths) == len(self.data["Wavelengths"]):
+            mask = wavelengths
+        for sample in samples:
+            if sample in self.data:
+                if ax is not None:
+                    ax.plot(self.data["Wavelengths"][mask], self.data[sample][mask], label=sample)
+                else:
+                    plt.plot(self.data["Wavelengths"][mask], self.data[sample][mask], label=sample)
+                    ax = plt.gca()
+            else:
+                print(f"Sample {sample} not found in data.")
+        ax.set_xlabel("Wavelength (nm)")
+        ax.set_ylabel("Absorbance")
+        ax.set_title("Nanodrop Absorbance Spectra")
+        ax.legend()
+        return ax
+
+
+
+if __name__ == "__main__":
+    
+    path = r"S:\tanderberg\Widefield_data\20250825\Nanodrop\UV-Vis 8_25_2025 8_22_28 AM_table.tsv"
+    ts = nanodropTSV(path)
+
+    new_names = ['N250_1 S1', 'N250_1 S2', 'D1000 S1', 'D1000 S2', 'N250_1 S3', 'D1000 S3', 'N250_2 S1', 'N250_2 S2', 'N250_2 S3']
+               #['Sample 1', 'Sample 2', 'S1 1000 1', 'S2 1000 1', '250 S 3 1', '1000 S 3 1', '250_2 S 1', '250_2 S 2', '250_2 S 3']
+
+    ts.rename_samples(new_names)
+
+    set_1 = ['N250_1 S1', 'N250_1 S2', 'N250_1 S3']
+    set_2 = ['D1000 S1', 'D1000 S2', 'D1000 S3']
+    set_3 = ['N250_2 S1', 'N250_2 S2', 'N250_2 S3']
+
+    data_1,_ = ts.get_data(samples=set_1, wavelengths=[532, 647])
+    data_2,_ = ts.get_data(samples=set_2, wavelengths=[532, 647])
+    data_3,_ = ts.get_data(samples=set_3, wavelengths=[532, 647])
+
+    ratio_1 = data_1[:,1] / data_1[:,0]
+    ratio_2 = data_2[:,1] / data_2[:,0]
+    ratio_3 = data_3[:,1] / data_3[:,0]
+
+    plt.figure()
+    plt.plot(ratio_1, label="N250_1")
+    plt.plot(ratio_2, label="D1000")
+    plt.plot(ratio_3, label="N250_2")
+    plt.xlabel("Wash Round")
+    plt.ylabel("Absorbance 647/532 Ratio")
+    plt.title("")
+    plt.legend()
+    plt.semilogy()
+    plt.grid()
+    # plt.show()
+
+    fig, axs = plt.subplot_mosaic([["a"],['b'],['c']], sharex=True, layout='constrained', figsize=(6,8))
+    ax_a = axs["a"]
+    ax_b = axs["b"]
+    ax_c = axs["c"]
+
+    ts.plot(ax=ax_a, samples=set_1, wavelengths=[500, 700])
+    ts.plot(ax=ax_b, samples=set_2, wavelengths=[500, 700])
+    ts.plot(ax=ax_c, samples=set_3, wavelengths=[500, 700])
+
+    plt.show()
+
+
+
+
