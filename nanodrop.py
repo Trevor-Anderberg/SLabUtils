@@ -1,9 +1,54 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-class nanodropTSV:
+class nanodropTSV():
+    """
+    nanodropTSV(path)
+    
+    A class for parsing, managing, and visualizing tab-delimited Nanodrop spectrophotometer data files.
+    This class reads Nanodrop output files in a specific table format, extracts metadata and absorbance data,
+    and provides methods for renaming samples, extracting data for specific samples and wavelengths, and plotting spectra.
+    path : str
+        Path to the Nanodrop TSV file to be loaded.
+    
+    Attributes
+    ----------
+    path : str
+        The file path to the loaded Nanodrop data file.
+    info : dict
+        Dictionary containing header information and lists of date-times, usernames, and sample IDs.
+    data : dict
+        Dictionary containing:
+            - "Wavelengths": numpy array of available wavelengths.
+            - Each sample ID as a key, with corresponding absorbance data as a numpy array.
+    
+    Methods
+    -------
+    __init__(path)
+        Initializes the object, determines file format, and loads data.
+    rename_samples(new_names)
+    get_data(samples=None, wavelengths=None)
+    plot(ax=None, samples=None, wavelengths=None)
+        If the file format is invalid or required fields are missing.
+        If the length of new sample names does not match the number of samples.
+
+    Notes
+    -----
+    - Only Nanodrop files with a header containing 'Application:' are supported.
+    - If a requested wavelength is not found, the closest available value is used with a warning.
+    - If a sample is not found in the data, its row in the output will be filled with NaN or a message will be printed during plotting.
+    """
 
     def __init__(self, path):
+        """
+        Initializes the object with the given file path, reads the first line to determine the file format,
+        and loads data accordingly.
+        Parameters:
+            path (str): The path to the file to be loaded.
+        Raises:
+            ValueError: If the file format is invalid (i.e., missing 'Application:' in the header).
+        """
+        
         self.path = path
         self.info = {}
         self.data = {}
@@ -12,10 +57,41 @@ class nanodropTSV:
             first_line = f.readline()
             self.is_table = "Application:" in first_line
             if not self.is_table:
+                # ideally, we would have a method here for the non table file format
+                # until its implementated, we raise an error
                 raise ValueError("Invalid file format: missing 'Application:' in header")
-            self.load_table(f)
+            else:
+                self._load_table(f)
 
-    def load_table(self,f):
+
+    def _load_table(self,f):
+        
+        """
+        Loads and parses a tab-delimited table from a file-like object, extracting header information,
+        wavelengths, and sample data.
+        The method expects the file to start with a header section containing key-value pairs separated
+        by ':\t', followed by a line with wavelength information (must include 'Date and Time'), and then
+        data rows for each sample.
+        
+        Parameters
+        ----------
+        f : file-like object
+            An open file or file-like object positioned at the start of the table to be loaded.
+        
+        Raises
+        ------
+        ValueError
+            If the expected 'Date and Time' field is missing from the wavelength line.
+        
+        Side Effects
+        ------------
+        Populates the following instance attributes:
+            - self.info: Dictionary with header information and lists of date-times, usernames, and sample IDs.
+            - self.data: Dictionary with 'Wavelengths' (numpy array) and sample data (numpy arrays keyed by sample ID).
+        """
+        
+
+
         # return to the beginning of the file
         f.seek(0)
         
@@ -80,6 +156,39 @@ class nanodropTSV:
         self.info["Samples"] = new_names
 
     def get_data(self, samples=None, wavelengths=None):
+        """
+        Retrieve data for specified samples and wavelengths from the dataset.
+        
+        Parameters
+        ----------
+        samples : list, tuple, or None, optional
+            List or tuple of sample names to retrieve data for. If None, all samples in self.info["Samples"] are used.
+        wavelengths : list, tuple, or None, optional
+            Specifies which wavelengths to select:
+                - If None, all wavelengths are selected.
+                - If a boolean mask (list/array of bools) of the same length as self.data["Wavelengths"], it is used directly.
+                - If a tuple, it is interpreted as a (min, max) range and selects wavelengths within that range.
+                - If a list of wavelength values, selects those wavelengths. If a value is not found, the closest available wavelength is used with a warning.
+        
+        Returns
+        -------
+        data : np.ndarray
+            Array of shape (number of samples, number of selected wavelengths) containing the data for the specified samples and wavelengths.
+        selected_wavelengths : np.ndarray
+            Array of the selected wavelengths corresponding to the columns in `data`.
+        
+        Raises
+        ------
+        ValueError
+            If a requested wavelength is out of the available range.
+        
+        Notes
+        -----
+        - If a requested wavelength is not found in the available wavelengths, the closest value is used and a message is printed.
+        - If a sample is not found in the data, its row in the output will be filled with NaN.
+        """
+
+
         if wavelengths is None:
             mask = np.ones_like(self.data["Wavelengths"], dtype=bool)
         elif len(wavelengths) > 0:
