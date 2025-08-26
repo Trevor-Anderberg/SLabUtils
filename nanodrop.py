@@ -83,7 +83,7 @@ class nanodropTSV:
         if wavelengths is None:
             mask = np.ones_like(self.data["Wavelengths"], dtype=bool)
         elif len(wavelengths) > 0:
-            if np.issubclass_(type(wavelengths[0]), bool) and len(wavelengths) == len(self.data["Wavelengths"]):
+            if issubclass(type(wavelengths[0]), bool) and len(wavelengths) == len(self.data["Wavelengths"]):
                 mask = wavelengths
                 # if the dtype is boolean, treat wavelengths as a mask
             elif type(wavelengths) is tuple:
@@ -109,7 +109,7 @@ class nanodropTSV:
         elif not isinstance(samples, (list, tuple)):
             samples = list(samples)
 
-        if np.issubclass_(type(mask[0]), (bool, np.bool_)):
+        if issubclass(type(mask[0]), (bool, np.bool_)):
             num_wavelengths = np.sum(mask)
         else:
             num_wavelengths = len(mask)
@@ -174,6 +174,7 @@ class nanodropTSV:
         ax.set_xlabel("Wavelength (nm)")
         ax.set_ylabel("Absorbance")
         ax.set_title("Nanodrop Absorbance Spectra")
+        ax.grid()
         ax.legend()
         return ax
 
@@ -193,35 +194,59 @@ if __name__ == "__main__":
     set_2 = ['D1000 S1', 'D1000 S2', 'D1000 S3']
     set_3 = ['N250_2 S1', 'N250_2 S2', 'N250_2 S3']
 
-    data_1,_ = ts.get_data(samples=set_1, wavelengths=[532, 647])
-    data_2,_ = ts.get_data(samples=set_2, wavelengths=[532, 647])
-    data_3,_ = ts.get_data(samples=set_3, wavelengths=[532, 647])
+    w1 = 500
+    w2 = 647
+
+    data_1,_ = ts.get_data(samples=set_1, wavelengths=[w1, w2])
+    data_2,_ = ts.get_data(samples=set_2, wavelengths=[w1, w2])
+    data_3,_ = ts.get_data(samples=set_3, wavelengths=[w1, w2])
 
     ratio_1 = data_1[:,1] / data_1[:,0]
     ratio_2 = data_2[:,1] / data_2[:,0]
     ratio_3 = data_3[:,1] / data_3[:,0]
 
-    plt.figure()
-    plt.plot(ratio_1, label="N250_1")
-    plt.plot(ratio_2, label="D1000")
-    plt.plot(ratio_3, label="N250_2")
-    plt.xlabel("Wash Round")
-    plt.ylabel("Absorbance 647/532 Ratio")
-    plt.title("")
-    plt.legend()
-    plt.semilogy()
-    plt.grid()
+    
     # plt.show()
 
-    fig, axs = plt.subplot_mosaic([["a"],['b'],['c']], sharex=True, layout='constrained', figsize=(6,8))
+    fig, axs = plt.subplot_mosaic([['s',"a"],["s",'b'],['s','c']],width_ratios=[1,4], layout='constrained', figsize=(9, 6))
+    ax_s = axs["s"]
     ax_a = axs["a"]
     ax_b = axs["b"]
     ax_c = axs["c"]
 
-    ts.plot(ax=ax_a, samples=set_1, wavelengths=[500, 700])
-    ts.plot(ax=ax_b, samples=set_2, wavelengths=[500, 700])
-    ts.plot(ax=ax_c, samples=set_3, wavelengths=[500, 700])
+    ax_s.plot(ratio_2, '--',  alpha=0.5, color='C0')
+    ax_s.plot(ratio_1, '--', alpha=0.5, color='C1')
+    ax_s.plot(ratio_3, '--', alpha=0.5, color='C2')
 
+    # Make markers fully opaque by re-plotting them on top with alpha=1
+    ax_s.plot(ratio_2, 'o', color='C0', alpha=1, label="D1000")
+    ax_s.plot(ratio_1, 'o', color='C1', alpha=1, label="N250_1")
+    ax_s.plot(ratio_3, 'o', color='C2', alpha=1, label="N250_2")
+
+    ax_s.set_xlabel("Wash Round")
+    ax_s.set_ylabel("Absorbance 647/532 Ratio")
+    ax_s.set_title("")
+    ax_s.legend()
+    ax_s.set_yscale("log")
+    ax_s.grid()
+
+
+
+    ts.plot(ax=ax_a, samples=set_2, wavelengths=[400, 800])
+    ax_a.set_title("D1000 " + ax_a.get_title())
+    ax_a.axvline(x=w1, color='g', linestyle='--', alpha=0.5)
+    ax_a.axvline(x=w2, color='r', linestyle='--', alpha=0.5)
+
+    ts.plot(ax=ax_b, samples=set_1, wavelengths=[400, 800])
+    ax_b.set_title("N250_1 " + ax_b.get_title())
+    ax_b.axvline(x=w1, color='g', linestyle='--', alpha=0.5)
+    ax_b.axvline(x=w2, color='r', linestyle='--', alpha=0.5)
+
+    ts.plot(ax=ax_c, samples=set_3, wavelengths=[400, 800])
+    ax_c.set_title("N250_2 " + ax_c.get_title())
+    ax_c.axvline(x=w1, color='g', linestyle='--', alpha=0.5)
+    ax_c.axvline(x=w2, color='r', linestyle='--', alpha=0.5)
+    plt.savefig("nanodrop_plot.png", dpi=300)
     plt.show()
 
 
